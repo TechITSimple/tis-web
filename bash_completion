@@ -1,5 +1,6 @@
 #!/bin/bash
 # FILE: bash_completion
+# Autocompletion script for tis-web CLI with precise context awareness
 
 _tis_web_completions() {
     local cur prev base_dir actions envs sites
@@ -7,7 +8,7 @@ _tis_web_completions() {
     local action="${COMP_WORDS[1]}"
 
     base_dir="/home/tis/websites"
-    actions="create-env install update status stop start edit remove help"
+    actions="create-env install update status down up edit remove help"
     
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -19,8 +20,8 @@ _tis_web_completions() {
     fi
 
     # --- 2. Action Filtering ---
-    # create-env never takes suggestions after the action
-    if [[ "$action" == "create-env" ]]; then
+    # create-env and help never take suggestions after the action
+    if [[ "$action" == "create-env" || "$action" == "help" ]]; then
         COMPREPLY=()
         return 0
     fi
