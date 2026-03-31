@@ -32,7 +32,7 @@ show_help() {
     echo -e "  ${GREEN}install${RESET} [env] <site>      Clone and setup a new site repository"
     echo -e "  ${GREEN}update${RESET} [env] [site]       Update site(s). Leave [site] empty to update all."
     echo -e "  ${GREEN}status${RESET} [env] [site]       Show container health. Leave [site] empty for all."
-    echo -e "  ${GREEN}stop/start${RESET} [env] [site]   Manage container lifecycle. Leave empty for all."
+    echo -e "  ${GREEN}down/up${RESET} [env] [site]   Manage container lifecycle. Leave empty for all."
     echo -e "  ${GREEN}edit${RESET} [env] <site>         Re-run interactive .env configuration"
     echo -e "  ${GREEN}remove${RESET} [env] <site>       PERMANENTLY delete a site"
     echo ""
@@ -166,8 +166,9 @@ build_env_interactively() {
 do_bulk_action() {
     local act=$1
     local d_cmd=$act
-    # Convert 'status' to docker compose 'ps'
+    # Convert 'status' to docker compose 'ps' and 'up' to 'up -d'
     [ "$act" == "status" ] && d_cmd="ps"
+    [ "$act" == "up" ] && d_cmd="up -d"
 
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
     echo -e "${BOLD}${YELLOW}BULK ACTION: ${act^^} ON ALL IN $ENV_NAME${RESET}"
@@ -256,15 +257,16 @@ do_action() {
     local action=$1
     local d_cmd=$action
     [ "$action" == "status" ] && d_cmd="ps"
+    [ "$action" == "up" ] && d_cmd="up -d"
 
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
     echo -e "${BOLD}${YELLOW}EXECUTING '$action' ON: $TARGET_SITE${RESET}"
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
     
     case "$action" in
-        stop|start|status)
+        down|up|status)
             (cd "$TARGET_DIR" && docker compose $d_cmd)
-            [ "$action" != "status" ] && echo -e "${GREEN}Containers ${action}ed.${RESET}"
+            [ "$action" != "status" ] && echo -e "${GREEN}Containers ${action} applied.${RESET}"
             ;;
         update)
             (cd "$TARGET_DIR" && bash "$UPDATE_SCRIPT")
@@ -291,7 +293,7 @@ do_action() {
 case "$ACTION" in
     create-env) do_create_env ;;
     install)    do_install ;; 
-    status|update|stop|start)
+    status|update|down|up)
         if [[ -z "$TARGET_SITE" || "$TARGET_SITE" == "*" ]]; then
             do_bulk_action "$ACTION"
         else
