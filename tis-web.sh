@@ -106,10 +106,16 @@ fi
 # --- 5. CORE FUNCTIONS ---
 build_env_interactively() {
     local target_dir=$1
-    echo -e "${YELLOW}[Manager] Configuring environment variables for $TARGET_SITE${RESET}"
+    local template_file=${2:-template.env}
+    local is_global=${3:-false}
     
-    if [ ! -f "$target_dir/template.env" ]; then
-        echo -e "${CYAN}[Manager] No template.env found. Skipping configuration.${RESET}"
+    local display_name=$TARGET_SITE
+    [ "$is_global" == true ] && display_name="$ENV_NAME (Global)"
+
+    echo -e "${YELLOW}[Manager] Configuring environment variables for $display_name${RESET}"
+    
+    if [ ! -f "$target_dir/$template_file" ]; then
+        echo -e "${CYAN}[Manager] No $template_file found. Skipping configuration.${RESET}"
         return
     fi
 
@@ -148,19 +154,21 @@ build_env_interactively() {
         
         local final_val="${user_val:-$suggested_val}"
         echo "${key}=${final_val}" >> "$temp_env"
-    done < "$target_dir/template.env"
+    done < "$target_dir/$template_file"
 
-    # --- AUTO-INJECT SYSTEM VARIABLES ---
-    sed -i '/^NETWORK_NAME=/d' "$temp_env" 2>/dev/null || true
-    sed -i '/^COMPOSE_PROJECT_NAME=/d' "$temp_env" 2>/dev/null || true
+    # --- AUTO-INJECT SYSTEM VARIABLES (Skip for global) ---
+    if [ "$is_global" == false ]; then
+        sed -i '/^NETWORK_NAME=/d' "$temp_env" 2>/dev/null || true
+        sed -i '/^COMPOSE_PROJECT_NAME=/d' "$temp_env" 2>/dev/null || true
 
-    echo "" >> "$temp_env"
-    echo "# --- AUTO-GENERATED SYSTEM VARIABLES ---" >> "$temp_env"
-    echo "NETWORK_NAME=${ENV_NAME}-net" >> "$temp_env"
-    echo "COMPOSE_PROJECT_NAME=${TARGET_SITE}" >> "$temp_env"
+        echo "" >> "$temp_env"
+        echo "# --- AUTO-GENERATED SYSTEM VARIABLES ---" >> "$temp_env"
+        echo "NETWORK_NAME=${ENV_NAME}-net" >> "$temp_env"
+        echo "COMPOSE_PROJECT_NAME=${TARGET_SITE}" >> "$temp_env"
+    fi
 
     mv "$temp_env" "$target_dir/.env"
-    echo -e "${GREEN}[Manager] .env file saved and system variables auto-injected successfully.${RESET}"
+    echo -e "${GREEN}[Manager] .env file saved successfully.${RESET}"
 }
 
 do_bulk_action() {
@@ -225,9 +233,13 @@ do_create_env() {
 
     echo -e "${CYAN}[Installer] ⚙️  Setting up global configs...${RESET}"
     if [ -f "$TARGET_DIR/global.env" ]; then
-        cp "$TARGET_DIR/global.env" "$ENV_DIR/.env"
+        # Temporarily copy global.env to process it into the final .env
+        cp "$TARGET_DIR/global.env" "$ENV_DIR/global.env"
+        build_env_interactively "$ENV_DIR" "global.env" true
+        rm "$ENV_DIR/global.env"
     fi
 
+    # Configure the core site (template.env)
     build_env_interactively "$TARGET_DIR"
 
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
