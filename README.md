@@ -44,7 +44,7 @@ source /etc/bash_completion.d/tis-web
 
 ---
 
-## 🔄 Updating the CLI
+## 🔄 Update
 
 When new features or bug fixes are pushed to the repository, you can update the CLI locally with a simple pull.
 
