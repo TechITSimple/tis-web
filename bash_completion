@@ -1,40 +1,67 @@
 #!/bin/bash
-# FILE: /etc/bash_completion.d/tis-web
-# Autocompletion script for tis-web CLI
+# FILE: bash_completion
+# Autocompletion script for tis-web CLI with context awareness
 
 _tis_web_completions() {
-    local cur prev base_dir actions envs sites env_name
-    
-    # Core paths and static actions
+    local cur prev base_dir actions envs sites
+    local current_dir="$PWD"
+    local context="anywhere"
+    local detected_env=""
+
     base_dir="/home/tis/websites"
     actions="create-env install update update-all status stop start edit remove help"
     
-    # Get current and previous word from the Bash completion array
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
+    # --- CONTEXT DETECTION ---
+    # Check if the current directory is inside the base_dir
+    if [[ "$current_dir" == "$base_dir"/*/* ]]; then
+        # E.g., /home/tis/websites/tis-test/sideros
+        context="site"
+    elif [[ "$current_dir" == "$base_dir"/* ]]; then
+        # E.g., /home/tis/websites/tis-test
+        context="env"
+        detected_env=$(basename "$current_dir")
+    fi
+
     case $COMP_CWORD in
         1)
-            # Level 1: Suggest main actions (install, update, status, etc.)
+            # Level 1: Always suggest actions
             COMPREPLY=( $(compgen -W "$actions" -- "$cur") )
             ;;
         2)
-            # Level 2: Suggest environment names (reading directory names)
-            if [ -d "$base_dir" ]; then
-                envs=$(find "$base_dir" -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)
-                COMPREPLY=( $(compgen -W "$envs" -- "$cur") )
+            # Level 2: Suggestion depends on where the user is
+            if [[ "$context" == "anywhere" ]]; then
+                # Suggest environment names
+                if [ -d "$base_dir" ]; then
+                    envs=$(cd "$base_dir" 2>/dev/null && compgen -d)
+                    COMPREPLY=( $(compgen -W "$envs" -- "$cur") )
+                fi
+            elif [[ "$context" == "env" ]]; then
+                # Suggest site names within the current environment
+                if [ -d "$base_dir/$detected_env" ]; then
+                    sites=$(cd "$base_dir/$detected_env" 2>/dev/null && compgen -d)
+                    COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
+                fi
+            elif [[ "$context" == "site" ]]; then
+                # No suggestions needed, context is already fully resolved
+                COMPREPLY=()
             fi
             ;;
         3)
-            # Level 3: Suggest site names based on the previously selected environment
-            env_name="${COMP_WORDS[2]}"
-            if [ -d "$base_dir/$env_name" ]; then
-                sites=$(find "$base_dir/$env_name" -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)
-                COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
+            # Level 3: Only relevant if we started from "anywhere"
+            if [[ "$context" == "anywhere" ]]; then
+                local selected_env="${COMP_WORDS[2]}"
+                if [ -d "$base_dir/$selected_env" ]; then
+                    sites=$(cd "$base_dir/$selected_env" 2>/dev/null && compgen -d)
+                    COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
+                fi
+            else
+                COMPREPLY=()
             fi
             ;;
         *)
-            # Stop suggesting after the 3rd parameter
             COMPREPLY=()
             ;;
     esac
