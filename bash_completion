@@ -1,5 +1,6 @@
 #!/bin/bash
 # FILE: bash_completion
+# Autocompletion script for tis-web CLI with precise context awareness
 
 _tis_web_completions() {
     local cur prev base_dir actions envs sites
@@ -51,11 +52,7 @@ _tis_web_completions() {
                     COMPREPLY=() # Waiting for user to type a new site name
                 else
                     sites=$(cd "$current_dir" 2>/dev/null && compgen -d)
-                    if [[ "$action" =~ ^(update|status|stop|start)$ ]]; then
-                        COMPREPLY=( $(compgen -W "* $sites" -- "$cur") )
-                    else
-                        COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
-                    fi
+                    COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
                 fi
                 
             elif [[ "$context" == "root" || "$context" == "anywhere" ]]; then
@@ -76,11 +73,7 @@ _tis_web_completions() {
                     local sel_env="${COMP_WORDS[2]}"
                     if [ -d "$base_dir/$sel_env" ]; then
                         sites=$(cd "$base_dir/$sel_env" 2>/dev/null && compgen -d)
-                        if [[ "$action" =~ ^(update|status|stop|start)$ ]]; then
-                            COMPREPLY=( $(compgen -W "* $sites" -- "$cur") )
-                        else
-                            COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
-                        fi
+                        COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
                     fi
                 fi
             else
