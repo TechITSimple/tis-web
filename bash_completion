@@ -1,6 +1,5 @@
 #!/bin/bash
 # FILE: bash_completion
-# Autocompletion script for tis-web CLI with precise context awareness
 
 _tis_web_completions() {
     local cur prev base_dir actions envs sites
