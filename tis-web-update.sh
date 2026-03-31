@@ -1,5 +1,4 @@
 #!/bin/bash
-# MANAGED BY TIS CORE - DO NOT EDIT
 
 set -e
 
