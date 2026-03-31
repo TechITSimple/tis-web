@@ -1,0 +1,44 @@
+#!/bin/bash
+# FILE: /etc/bash_completion.d/tis-web
+# Autocompletion script for tis-web CLI
+
+_tis_web_completions() {
+    local cur prev base_dir actions envs sites env_name
+    
+    # Core paths and static actions
+    base_dir="/home/tis/websites"
+    actions="create-env install update update-all status stop start edit remove help"
+    
+    # Get current and previous word from the Bash completion array
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    case $COMP_CWORD in
+        1)
+            # Level 1: Suggest main actions (install, update, status, etc.)
+            COMPREPLY=( $(compgen -W "$actions" -- "$cur") )
+            ;;
+        2)
+            # Level 2: Suggest environment names (reading directory names)
+            if [ -d "$base_dir" ]; then
+                envs=$(find "$base_dir" -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)
+                COMPREPLY=( $(compgen -W "$envs" -- "$cur") )
+            fi
+            ;;
+        3)
+            # Level 3: Suggest site names based on the previously selected environment
+            env_name="${COMP_WORDS[2]}"
+            if [ -d "$base_dir/$env_name" ]; then
+                sites=$(find "$base_dir/$env_name" -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)
+                COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
+            fi
+            ;;
+        *)
+            # Stop suggesting after the 3rd parameter
+            COMPREPLY=()
+            ;;
+    esac
+}
+
+# Register the completion function for the 'tis-web' command
+complete -F _tis_web_completions tis-web
