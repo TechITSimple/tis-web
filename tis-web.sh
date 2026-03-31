@@ -13,7 +13,8 @@ export RED='\033[0;31m'
 export RESET='\033[0m'
 
 # --- 1. SCRIPT CONTEXT ---
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+REAL_SCRIPT=$(readlink -f "${BASH_SOURCE[0]}")
+SCRIPT_DIR=$(dirname "$REAL_SCRIPT")
 UPDATE_SCRIPT="$SCRIPT_DIR/tis-web-update.sh"
 BASE_WEB_DIR="/home/tis/websites"
 CORE_NAME="hosting-core"
