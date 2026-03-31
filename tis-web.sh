@@ -25,22 +25,21 @@ REPOSITORY_OWNER="TechITSimple"
 # --- 2. HELP FUNCTION ---
 show_help() {
     echo -e "${BOLD}${CYAN}TechITSimple Web Manager${RESET}"
-    echo -e "Usage: ${GREEN}tis-web${RESET} <action> [environment] [site]"
+    echo -e "Usage: ${GREEN}tis-web${RESET} <action> [environment] [site|*]"
     echo ""
     echo -e "${BOLD}ACTIONS:${RESET}"
-    echo -e "  ${GREEN}create-env${RESET} <env>          Bootstrap a new environment (clones core, sets network)"
+    echo -e "  ${GREEN}create-env${RESET} <env>           Bootstrap a new environment"
     echo -e "  ${GREEN}install${RESET} [env] <site>      Clone and setup a new site repository"
-    echo -e "  ${GREEN}update${RESET} [env] [site]       Pull changes and restart container (defaults to current)"
-    echo -e "  ${GREEN}update-all${RESET} [env]          Update core infrastructure then all satellites"
-    echo -e "  ${GREEN}status${RESET} [env] [site]       Show container health (defaults to env-wide status)"
-    echo -e "  ${GREEN}stop/start${RESET} [env] [site]   Manage container lifecycle"
-    echo -e "  ${GREEN}edit${RESET} [env] [site]         Re-run interactive .env configuration"
-    echo -e "  ${GREEN}remove${RESET} [env] [site]       PERMANENTLY delete a site (containers, volumes, files)"
+    echo -e "  ${GREEN}update${RESET} [env] [site|*]     Update site(s). Leave site empty or use '*' for all."
+    echo -e "  ${GREEN}status${RESET} [env] [site|*]     Show container health. Leave empty or use '*' for all."
+    echo -e "  ${GREEN}stop/start${RESET} [env] [site|*]   Manage container lifecycle"
+    echo -e "  ${GREEN}edit${RESET} [env] <site>         Re-run interactive .env configuration"
+    echo -e "  ${GREEN}remove${RESET} [env] <site>       PERMANENTLY delete a site"
     echo ""
     echo -e "${BOLD}CONTEXT DETECTION:${RESET}"
-    echo -e "  1. ${CYAN}Anywhere:${RESET}    tis-web <action> <env> <site>    (e.g., from ~)"
-    echo -e "  2. ${CYAN}Env Folder:${RESET}  tis-web <action> <site>          (e.g., inside /tis-test/)"
-    echo -e "  3. ${CYAN}Site Folder:${RESET} tis-web <action>                 (e.g., inside /tis-test/my-site/)"
+    echo -e "  - ${CYAN}Root Folder:${RESET} If in $BASE_WEB_DIR, you MUST specify [env]"
+    echo -e "  - ${CYAN}Env Folder:${RESET}  If inside /env/, [env] is automatic"
+    echo -e "  - ${CYAN}Site Folder:${RESET} If inside /env/site/, both [env] and [site] are automatic"
     echo ""
 }
 
@@ -65,44 +64,40 @@ if [ "$ACTION" == "create-env" ]; then
     ENV_NAME=$2
     ENV_DIR="$BASE_WEB_DIR/$ENV_NAME"
 else
-    # Detect context dynamically to support env-level and site-level commands
-    if [ "$#" -ge 2 ]; then
-        if [ -d "$BASE_WEB_DIR/$2" ]; then
-            # Execution from anywhere with env specified
-            ENV_NAME=$2
-            TARGET_SITE=$3
-        else
-            # Execution from within env folder
-            ENV_NAME=$(basename "$PWD")
-            TARGET_SITE=$2
-        fi
+    # Detect context dynamically
+    # 1. Root Folder
+    if [ "$PWD" == "$BASE_WEB_DIR" ]; then
+        ENV_NAME=$2
+        TARGET_SITE=$3
+    # 2. Env Folder
+    elif [ -d "$PWD/$CORE_NAME" ]; then
+        ENV_NAME=$(basename "$PWD")
+        TARGET_SITE=$2
+    # 3. Site Folder
+    elif [ -d "$(dirname "$PWD")/$CORE_NAME" ]; then
+        ENV_NAME=$(basename "$(dirname "$PWD")")
+        TARGET_SITE=$(basename "$PWD")
+    # 4. Anywhere Else
     else
-        # Execution with 1 argument
-        if [ -d "$PWD/$CORE_NAME" ]; then
-            # Inside env folder
-            ENV_NAME=$(basename "$PWD")
-        else
-            # Inside site folder
-            ENV_NAME=$(basename "$(dirname "$PWD")")
-            TARGET_SITE=$(basename "$PWD")
-        fi
+        ENV_NAME=$2
+        TARGET_SITE=$3
     fi
 
     ENV_DIR="$BASE_WEB_DIR/$ENV_NAME"
     TARGET_DIR="$ENV_DIR/$TARGET_SITE"
 
     # --- 4. VALIDATION ---
-    if [ ! -d "$ENV_DIR" ]; then
-        echo -e "${RED}Error: Environment '$ENV_NAME' not found.${RESET}"
+    if [ -z "$ENV_NAME" ] || [ ! -d "$ENV_DIR" ]; then
+        echo -e "${RED}Error: Environment '$ENV_NAME' not found or not specified.${RESET}"
         exit 1
     fi
 
-    if [[ "$ACTION" =~ ^(install|edit|remove|start|stop)$ ]] && [ -z "$TARGET_SITE" ]; then
+    if [[ "$ACTION" =~ ^(install|edit|remove)$ ]] && [ -z "$TARGET_SITE" ]; then
         echo -e "${RED}Error: Action '$ACTION' requires a specific target site.${RESET}"
         exit 1
     fi
 
-    if [[ "$ACTION" != "install" && -n "$TARGET_SITE" && ! -d "$TARGET_DIR" ]]; then
+    if [[ "$ACTION" != "install" && -n "$TARGET_SITE" && "$TARGET_SITE" != "*" && ! -d "$TARGET_DIR" ]]; then
         echo -e "${RED}Error: Site '$TARGET_SITE' does not exist in environment '$ENV_NAME'.${RESET}"
         exit 1
     fi
@@ -168,6 +163,39 @@ build_env_interactively() {
     echo -e "${GREEN}[Manager] .env file saved and system variables auto-injected successfully.${RESET}"
 }
 
+do_bulk_action() {
+    local act=$1
+    local d_cmd=$act
+    # Convert 'status' to docker compose 'ps'
+    [ "$act" == "status" ] && d_cmd="ps"
+
+    echo -e "${BOLD}${CYAN}=========================================${RESET}"
+    echo -e "${BOLD}${YELLOW}BULK ACTION: ${act^^} ON ALL IN $ENV_NAME${RESET}"
+    echo -e "${BOLD}${CYAN}=========================================${RESET}"
+
+    # 1. Always process Core first
+    if [ -d "$ENV_DIR/$CORE_NAME" ]; then
+        echo -e "${CYAN}--- [CORE] $CORE_NAME ---${RESET}"
+        (cd "$ENV_DIR/$CORE_NAME" && [ "$act" == "update" ] && bash "$UPDATE_SCRIPT" || docker compose $d_cmd)
+        echo ""
+    else
+        echo -e "${YELLOW}Warning: $CORE_NAME not found in $ENV_NAME${RESET}"
+    fi
+
+    # 2. Process all other satellites
+    for dir in "$ENV_DIR"/*/; do
+        local dname=$(basename "$dir")
+        if [ "$dname" != "$CORE_NAME" ] && [ -d "$dir" ] && [ -f "${dir}docker-compose.yml" ]; then
+            echo -e "${CYAN}--- $dname ---${RESET}"
+            (cd "$dir" && [ "$act" == "update" ] && bash "$UPDATE_SCRIPT" || docker compose $d_cmd)
+            echo ""
+        fi
+    done
+    
+    echo -e "${BOLD}${CYAN}=========================================${RESET}"
+    echo -e "${GREEN}Bulk $act completed successfully.${RESET}"
+}
+
 do_create_env() {
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
     echo -e "${BOLD}${YELLOW}🏗️  BOOTSTRAPPING ENVIRONMENT: $ENV_NAME${RESET}"
@@ -181,7 +209,7 @@ do_create_env() {
     echo -e "${CYAN}[Installer] 📁 Creating directory: $ENV_DIR${RESET}"
     mkdir -p "$ENV_DIR"
 
-    # We set TARGET_SITE temporarily so the interactive builder knows what it's configuring
+    # Temporarily target the core to configure it
     TARGET_SITE="$CORE_NAME"
     TARGET_DIR="$ENV_DIR/$CORE_NAME"
 
@@ -199,13 +227,13 @@ do_create_env() {
         cp "$TARGET_DIR/global.env" "$ENV_DIR/.env"
     fi
 
-    # Run the interactive builder for the core to prompt for TUNNEL_TOKEN etc.
     build_env_interactively "$TARGET_DIR"
 
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
     echo -e "${BOLD}${YELLOW}🚀 STARTING INITIAL DEPLOYMENT${RESET}"
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
-    do_update_all
+    # Trigger bulk update to start the environment
+    do_bulk_action "update"
 }
 
 do_install() {
@@ -224,65 +252,19 @@ do_install() {
     (cd "$TARGET_DIR" && bash "$UPDATE_SCRIPT" --force)
 }
 
-do_update_all() {
-    echo -e "${BOLD}${CYAN}=========================================${RESET}"
-    echo -e "${BOLD}${YELLOW}UPDATING ALL IN: $ENV_NAME${RESET}"
-    echo -e "${BOLD}${CYAN}=========================================${RESET}"
-    
-    # 1. Force update core first to ensure network and tunnel stability
-    if [ -d "$ENV_DIR/$CORE_NAME" ]; then
-        echo -e "${CYAN}--> [1/2] Updating Core Infrastructure...${RESET}"
-        (cd "$ENV_DIR/$CORE_NAME" && bash "$UPDATE_SCRIPT")
-    else
-        echo -e "${YELLOW}Warning: $CORE_NAME not found in $ENV_NAME${RESET}"
-    fi
-
-    echo -e "${CYAN}--> [2/2] Updating Satellites...${RESET}"
-    for dir in "$ENV_DIR"/*/; do
-        local dir_name=$(basename "$dir")
-        if [ "$dir_name" != "$CORE_NAME" ] && [ -d "$dir" ]; then
-            echo -e "    ${GREEN}-> Updating: $dir_name${RESET}"
-            (cd "$dir" && bash "$UPDATE_SCRIPT")
-        fi
-    done
-    
-    echo -e "${BOLD}${CYAN}=========================================${RESET}"
-    echo -e "${GREEN}All updates completed successfully.${RESET}"
-}
-
-do_status() {
-    echo -e "${BOLD}${CYAN}=========================================${RESET}"
-    if [ -n "$TARGET_SITE" ]; then
-        echo -e "${BOLD}${YELLOW}STATUS FOR: $TARGET_SITE${RESET}"
-        echo -e "${BOLD}${CYAN}=========================================${RESET}"
-        (cd "$TARGET_DIR" && docker compose ps)
-    else
-        echo -e "${BOLD}${YELLOW}STATUS FOR ENVIRONMENT: $ENV_NAME${RESET}"
-        echo -e "${BOLD}${CYAN}=========================================${RESET}"
-        for dir in "$ENV_DIR"/*/; do
-            if [ -f "$dir/docker-compose.yml" ]; then
-                echo -e "${CYAN}--- $(basename "$dir") ---${RESET}"
-                (cd "$dir" && docker compose ps)
-                echo ""
-            fi
-        done
-    fi
-}
-
 do_action() {
     local action=$1
+    local d_cmd=$action
+    [ "$action" == "status" ] && d_cmd="ps"
+
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
     echo -e "${BOLD}${YELLOW}EXECUTING '$action' ON: $TARGET_SITE${RESET}"
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
     
     case "$action" in
-        stop)
-            (cd "$TARGET_DIR" && docker compose stop)
-            echo -e "${GREEN}Containers stopped.${RESET}"
-            ;;
-        start)
-            (cd "$TARGET_DIR" && docker compose start)
-            echo -e "${GREEN}Containers started.${RESET}"
+        stop|start|status)
+            (cd "$TARGET_DIR" && docker compose $d_cmd)
+            [ "$action" != "status" ] && echo -e "${GREEN}Containers ${action}ed.${RESET}"
             ;;
         update)
             (cd "$TARGET_DIR" && bash "$UPDATE_SCRIPT")
@@ -309,9 +291,14 @@ do_action() {
 case "$ACTION" in
     create-env) do_create_env ;;
     install)    do_install ;; 
-    update-all) do_update_all ;;
-    status)     do_status ;;
-    edit|update|stop|start|remove) do_action "$ACTION" ;;
+    status|update|stop|start)
+        if [[ -z "$TARGET_SITE" || "$TARGET_SITE" == "*" ]]; then
+            do_bulk_action "$ACTION"
+        else
+            do_action "$ACTION"
+        fi
+        ;;
+    edit|remove) do_action "$ACTION" ;;
     *) 
         echo -e "${RED}Unknown command: $ACTION${RESET}"
         show_help
