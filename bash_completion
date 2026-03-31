@@ -1,12 +1,13 @@
 #!/bin/bash
 # FILE: bash_completion
-# Autocompletion script for tis-web CLI with context awareness
+# Autocompletion script for tis-web CLI with context and action awareness
 
 _tis_web_completions() {
     local cur prev base_dir actions envs sites
     local current_dir="$PWD"
     local context="anywhere"
     local detected_env=""
+    local action="${COMP_WORDS[1]}"
 
     base_dir="/home/tis/websites"
     actions="create-env install update update-all status stop start edit remove help"
@@ -15,12 +16,9 @@ _tis_web_completions() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
     # --- CONTEXT DETECTION ---
-    # Check if the current directory is inside the base_dir
     if [[ "$current_dir" == "$base_dir"/*/* ]]; then
-        # E.g., /home/tis/websites/tis-test/sideros
         context="site"
     elif [[ "$current_dir" == "$base_dir"/* ]]; then
-        # E.g., /home/tis/websites/tis-test
         context="env"
         detected_env=$(basename "$current_dir")
     fi
@@ -31,27 +29,44 @@ _tis_web_completions() {
             COMPREPLY=( $(compgen -W "$actions" -- "$cur") )
             ;;
         2)
-            # Level 2: Suggestion depends on where the user is
+            # Level 2: Suggestion depends on action and context
+            
+            # If creating a new environment, do not suggest existing directories
+            if [[ "$action" == "create-env" ]]; then
+                COMPREPLY=()
+                return 0
+            fi
+
+            # If installing inside an environment folder, the second param is the new site name
+            if [[ "$action" == "install" && "$context" != "anywhere" ]]; then
+                COMPREPLY=()
+                return 0
+            fi
+
             if [[ "$context" == "anywhere" ]]; then
-                # Suggest environment names
                 if [ -d "$base_dir" ]; then
                     envs=$(cd "$base_dir" 2>/dev/null && compgen -d)
                     COMPREPLY=( $(compgen -W "$envs" -- "$cur") )
                 fi
             elif [[ "$context" == "env" ]]; then
-                # Suggest site names within the current environment
                 if [ -d "$base_dir/$detected_env" ]; then
                     sites=$(cd "$base_dir/$detected_env" 2>/dev/null && compgen -d)
                     COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
                 fi
             elif [[ "$context" == "site" ]]; then
-                # No suggestions needed, context is already fully resolved
                 COMPREPLY=()
             fi
             ;;
         3)
             # Level 3: Only relevant if we started from "anywhere"
             if [[ "$context" == "anywhere" ]]; then
+                
+                # If installing from anywhere, the third param is the new site name
+                if [[ "$action" == "install" ]]; then
+                    COMPREPLY=()
+                    return 0
+                fi
+
                 local selected_env="${COMP_WORDS[2]}"
                 if [ -d "$base_dir/$selected_env" ]; then
                     sites=$(cd "$base_dir/$selected_env" 2>/dev/null && compgen -d)
@@ -67,5 +82,4 @@ _tis_web_completions() {
     esac
 }
 
-# Register the completion function for the 'tis-web' command
 complete -F _tis_web_completions tis-web
