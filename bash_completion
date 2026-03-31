@@ -1,82 +1,96 @@
 #!/bin/bash
 # FILE: bash_completion
-# Autocompletion script for tis-web CLI with context and action awareness
+# Autocompletion script for tis-web CLI with precise context awareness
 
 _tis_web_completions() {
     local cur prev base_dir actions envs sites
     local current_dir="$PWD"
-    local context="anywhere"
-    local detected_env=""
     local action="${COMP_WORDS[1]}"
 
     base_dir="/home/tis/websites"
-    actions="create-env install update update-all status stop start edit remove help"
+    actions="create-env install update status stop start edit remove help"
     
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    # --- CONTEXT DETECTION ---
-    if [[ "$current_dir" == "$base_dir"/*/* ]]; then
+    # --- 1. Actions ---
+    if [ $COMP_CWORD -eq 1 ]; then
+        COMPREPLY=( $(compgen -W "$actions" -- "$cur") )
+        return 0
+    fi
+
+    # --- 2. Action Filtering ---
+    # create-env never takes suggestions after the action
+    if [[ "$action" == "create-env" ]]; then
+        COMPREPLY=()
+        return 0
+    fi
+
+    # --- 3. Context Logic ---
+    local context="anywhere"
+    local detected_env=""
+    
+    if [[ "$current_dir" == "$base_dir" ]]; then
+        context="root"
+    elif [[ "$current_dir" == "$base_dir"/*/* ]]; then 
         context="site"
-    elif [[ "$current_dir" == "$base_dir"/* ]]; then
+    elif [[ "$current_dir" == "$base_dir"/* ]]; then 
         context="env"
         detected_env=$(basename "$current_dir")
     fi
 
+    # --- 4. Suggestions based on COMP_CWORD ---
     case $COMP_CWORD in
-        1)
-            # Level 1: Always suggest actions
-            COMPREPLY=( $(compgen -W "$actions" -- "$cur") )
-            ;;
         2)
-            # Level 2: Suggestion depends on action and context
-            
-            # If creating a new environment, do not suggest existing directories
-            if [[ "$action" == "create-env" ]]; then
+            if [[ "$context" == "site" ]]; then
+                # Already inside a site folder, no parameters needed
                 COMPREPLY=()
-                return 0
-            fi
-
-            # If installing inside an environment folder, the second param is the new site name
-            if [[ "$action" == "install" && "$context" != "anywhere" ]]; then
-                COMPREPLY=()
-                return 0
-            fi
-
-            if [[ "$context" == "anywhere" ]]; then
+                
+            elif [[ "$context" == "env" ]]; then
+                # Inside an env folder: parameter 2 is the SITE
+                if [[ "$action" == "install" ]]; then
+                    COMPREPLY=() # Waiting for user to type a new site name
+                else
+                    sites=$(cd "$current_dir" 2>/dev/null && compgen -d)
+                    if [[ "$action" =~ ^(update|status|stop|start)$ ]]; then
+                        COMPREPLY=( $(compgen -W "* $sites" -- "$cur") )
+                    else
+                        COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
+                    fi
+                fi
+                
+            elif [[ "$context" == "root" || "$context" == "anywhere" ]]; then
+                # Outside: parameter 2 is the ENV
                 if [ -d "$base_dir" ]; then
                     envs=$(cd "$base_dir" 2>/dev/null && compgen -d)
                     COMPREPLY=( $(compgen -W "$envs" -- "$cur") )
                 fi
-            elif [[ "$context" == "env" ]]; then
-                if [ -d "$base_dir/$detected_env" ]; then
-                    sites=$(cd "$base_dir/$detected_env" 2>/dev/null && compgen -d)
-                    COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
-                fi
-            elif [[ "$context" == "site" ]]; then
-                COMPREPLY=()
             fi
             ;;
+            
         3)
-            # Level 3: Only relevant if we started from "anywhere"
-            if [[ "$context" == "anywhere" ]]; then
-                
-                # If installing from anywhere, the third param is the new site name
+            # Parameter 3 is only reached if Context was Root/Anywhere (meaning param 2 was ENV)
+            if [[ "$context" == "root" || "$context" == "anywhere" ]]; then
                 if [[ "$action" == "install" ]]; then
-                    COMPREPLY=()
-                    return 0
-                fi
-
-                local selected_env="${COMP_WORDS[2]}"
-                if [ -d "$base_dir/$selected_env" ]; then
-                    sites=$(cd "$base_dir/$selected_env" 2>/dev/null && compgen -d)
-                    COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
+                    COMPREPLY=() # Waiting for user to type a new site name
+                else
+                    local sel_env="${COMP_WORDS[2]}"
+                    if [ -d "$base_dir/$sel_env" ]; then
+                        sites=$(cd "$base_dir/$sel_env" 2>/dev/null && compgen -d)
+                        if [[ "$action" =~ ^(update|status|stop|start)$ ]]; then
+                            COMPREPLY=( $(compgen -W "* $sites" -- "$cur") )
+                        else
+                            COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
+                        fi
+                    fi
                 fi
             else
                 COMPREPLY=()
             fi
             ;;
+            
         *)
+            # Stop suggesting after the 3rd parameter
             COMPREPLY=()
             ;;
     esac
