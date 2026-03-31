@@ -27,7 +27,7 @@ show_help() {
     echo -e "Usage: ${GREEN}tis-web${RESET} <action> [environment] [site]"
     echo ""
     echo -e "${BOLD}ACTIONS:${RESET}"
-    echo -e "  ${GREEN}create-env${RESET} <env>     Bootstrap a new environment (clones core, sets network)"
+    echo -e "  ${GREEN}create-env${RESET} <env>      Bootstrap a new environment (clones core, sets network)"
     echo -e "  ${GREEN}install${RESET} <site>        Clone and setup a new site repository"
     echo -e "  ${GREEN}update${RESET} [site]         Pull changes and restart container (defaults to current)"
     echo -e "  ${GREEN}update-all${RESET}            Update core infrastructure then all satellites"
@@ -37,9 +37,9 @@ show_help() {
     echo -e "  ${GREEN}remove${RESET} <site>         PERMANENTLY delete a site (containers, volumes, files)"
     echo ""
     echo -e "${BOLD}CONTEXT DETECTION:${RESET}"
-    echo -e "  1. ${CYAN}Anywhere:${RESET}    tis-web <action> <env> <site>"
-    echo -e "  2. ${CYAN}Env Folder:${RESET}  tis-web <action> <site>  (inside e.g. /tis-test/)"
-    echo -e "  3. ${CYAN}Site Folder:${RESET} tis-web <action>         (inside e.g. /tis-test/my-site/)"
+    echo -e "  1. ${CYAN}Anywhere:${RESET}    tis-web <action> <env> <site>    (inside any path)"
+    echo -e "  2. ${CYAN}Env Folder:${RESET}  tis-web <action> <site>          (inside e.g. /tis-test/)"
+    echo -e "  3. ${CYAN}Site Folder:${RESET} tis-web <action>                 (inside e.g. /tis-test/my-site/)"
     echo ""
 }
 
