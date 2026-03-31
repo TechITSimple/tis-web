@@ -6,7 +6,7 @@ set -e
 
 # --- 1. SCRIPT CONTEXT ---
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-UPDATE_SCRIPT="$SCRIPT_DIR/tis-hosting-update.sh"
+UPDATE_SCRIPT="$SCRIPT_DIR/tis-web-update.sh"
 BASE_WEB_DIR="/home/tis/websites"
 
 # --- 2. ARGUMENT PARSING & CONTEXT RESOLUTION ---
