@@ -160,11 +160,13 @@ build_env_interactively() {
     if [ "$is_global" == false ]; then
         sed -i '/^NETWORK_NAME=/d' "$temp_env" 2>/dev/null || true
         sed -i '/^COMPOSE_PROJECT_NAME=/d' "$temp_env" 2>/dev/null || true
+        sed -i '/^ENV_NAME=/d' "$temp_env" 2>/dev/null || true
 
         echo "" >> "$temp_env"
         echo "# --- AUTO-GENERATED SYSTEM VARIABLES ---" >> "$temp_env"
+        echo "ENV_NAME=${ENV_NAME}" >> "$temp_env"
         echo "NETWORK_NAME=${ENV_NAME}-net" >> "$temp_env"
-        echo "COMPOSE_PROJECT_NAME=${TARGET_SITE}" >> "$temp_env"
+        echo "COMPOSE_PROJECT_NAME=${ENV_NAME}-${TARGET_SITE}" >> "$temp_env"
     fi
 
     mv "$temp_env" "$target_dir/.env"
