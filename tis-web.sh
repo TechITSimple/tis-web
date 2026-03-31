@@ -28,11 +28,11 @@ show_help() {
     echo -e "Usage: ${GREEN}tis-web${RESET} <action> [environment] [site]"
     echo ""
     echo -e "${BOLD}ACTIONS:${RESET}"
-    echo -e "  ${GREEN}create-env${RESET} <env>           Bootstrap a new environment"
+    echo -e "  ${GREEN}create-env${RESET} <env>          Bootstrap a new environment"
     echo -e "  ${GREEN}install${RESET} [env] <site>      Clone and setup a new site repository"
-    echo -e "  ${GREEN}update${RESET} [env] [site]       Update site(s). Leave [site] empty to update all."
+    echo -e "  ${GREEN}pull${RESET} [env] [site]         Update site(s). Leave [site] empty to update all."
     echo -e "  ${GREEN}status${RESET} [env] [site]       Show container health. Leave [site] empty for all."
-    echo -e "  ${GREEN}down/up${RESET} [env] [site]   Manage container lifecycle. Leave empty for all."
+    echo -e "  ${GREEN}down/up${RESET} [env] [site]      Manage container lifecycle. Leave empty for all."
     echo -e "  ${GREEN}edit${RESET} [env] <site>         Re-run interactive .env configuration"
     echo -e "  ${GREEN}remove${RESET} [env] <site>       PERMANENTLY delete a site"
     echo ""
@@ -177,7 +177,7 @@ do_bulk_action() {
     # 1. Always process Core first
     if [ -d "$ENV_DIR/$CORE_NAME" ]; then
         echo -e "${CYAN}--- [CORE] $CORE_NAME ---${RESET}"
-        (cd "$ENV_DIR/$CORE_NAME" && [ "$act" == "update" ] && bash "$UPDATE_SCRIPT" || docker compose $d_cmd)
+        (cd "$ENV_DIR/$CORE_NAME" && [ "$act" == "pull" ] && bash "$UPDATE_SCRIPT" || docker compose $d_cmd)
         echo ""
     else
         echo -e "${YELLOW}Warning: $CORE_NAME not found in $ENV_NAME${RESET}"
@@ -188,7 +188,7 @@ do_bulk_action() {
         local dname=$(basename "$dir")
         if [ "$dname" != "$CORE_NAME" ] && [ -d "$dir" ] && [ -f "${dir}docker-compose.yml" ]; then
             echo -e "${CYAN}--- $dname ---${RESET}"
-            (cd "$dir" && [ "$act" == "update" ] && bash "$UPDATE_SCRIPT" || docker compose $d_cmd)
+            (cd "$dir" && [ "$act" == "pull" ] && bash "$UPDATE_SCRIPT" || docker compose $d_cmd)
             echo ""
         fi
     done
@@ -234,7 +234,7 @@ do_create_env() {
     echo -e "${BOLD}${YELLOW}🚀 STARTING INITIAL DEPLOYMENT${RESET}"
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
     # Trigger bulk update to start the environment
-    do_bulk_action "update"
+    do_bulk_action "pull"
 }
 
 do_install() {
@@ -268,7 +268,7 @@ do_action() {
             (cd "$TARGET_DIR" && docker compose $d_cmd)
             [ "$action" != "status" ] && echo -e "${GREEN}Containers ${action} applied.${RESET}"
             ;;
-        update)
+        pull)
             (cd "$TARGET_DIR" && bash "$UPDATE_SCRIPT")
             ;;
         edit)
@@ -293,7 +293,7 @@ do_action() {
 case "$ACTION" in
     create-env) do_create_env ;;
     install)    do_install ;; 
-    status|update|down|up)
+    status|pull|down|up)
         if [[ -z "$TARGET_SITE" || "$TARGET_SITE" == "*" ]]; then
             do_bulk_action "$ACTION"
         else
