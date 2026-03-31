@@ -1,6 +1,5 @@
 #!/bin/bash
 # FILE: bash_completion
-# Autocompletion script for tis-web CLI with precise context awareness
 
 _tis_web_completions() {
     local cur prev base_dir actions envs sites
@@ -8,7 +7,7 @@ _tis_web_completions() {
     local action="${COMP_WORDS[1]}"
 
     base_dir="/home/tis/websites"
-    actions="create-env install update status down up edit remove help"
+    actions="create-env install pull status down up edit remove help"
     
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
