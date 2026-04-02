@@ -1,6 +1,6 @@
 #!/bin/bash
 # FILE: bash_completion
-# Autocompletion script for tis-web CLI (Multiselect & GitHub Integration)
+# Autocompletion script for tis-web CLI (Advanced Filtering)
 
 _tis_web_completions() {
     local cur prev base_dir actions envs sites github_repos
@@ -13,13 +13,13 @@ _tis_web_completions() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    # Helper function to remove already typed items from suggestions
-    _filter_used() {
+    # Helper function to remove items from suggestions based on an exclude list
+    _filter_list() {
         local all_items="$1"
-        local used_items="${COMP_WORDS[@]}"
+        local exclude_items="$2"
         local filtered=""
         for item in $all_items; do
-            if [[ ! " ${used_items[@]} " =~ " ${item} " ]]; then
+            if [[ ! " ${exclude_items} " =~ " ${item} " ]]; then
                 filtered="$filtered $item"
             fi
         done
@@ -62,19 +62,22 @@ _tis_web_completions() {
     # CASE B: We are inside an ENV folder (Pos 2 onwards are SITES)
     if [[ "$context" == "env" ]]; then
         if [[ "$action" == "install" ]]; then
-            # Fetch from GitHub
-            local token_opt=""
             if [ -f "/home/tis/.github_token" ]; then
-                token_opt="-H \"Authorization: Bearer $(cat /home/tis/.github_token)\""
+                github_repos=$(curl -s -H "Authorization: Bearer $(cat /home/tis/.github_token)" "https://api.github.com/orgs/TechITSimple/repos?per_page=100" | grep -o '"name": "[^"]*' | cut -d'"' -f4)
+            else
+                github_repos=$(curl -s "https://api.github.com/orgs/TechITSimple/repos?per_page=100" | grep -o '"name": "[^"]*' | cut -d'"' -f4)
             fi
-            # Use grep/awk to parse basic JSON quickly without jq dependency
-            github_repos=$(curl -s $token_opt https://api.github.com/orgs/TechITSimple/repos?per_page=100 | grep -o '"name": "[^"]*' | cut -d'"' -f4)
-            sites=$(_filter_used "$github_repos")
+            # Exclude what's already typed, tis-web, and already installed sites
+            local existing_sites=$(cd "$current_dir" 2>/dev/null && compgen -d)
+            local excludes="${COMP_WORDS[@]} tis-web $existing_sites"
+            
+            sites=$(_filter_list "$github_repos" "$excludes")
             COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
         else
             sites=$(cd "$current_dir" 2>/dev/null && compgen -d)
-            sites=$(_filter_used "$sites")
-            # Offer -a for bulk commands if it's the first site parameter
+            local excludes="${COMP_WORDS[@]}"
+            sites=$(_filter_list "$sites" "$excludes")
+            
             if [[ $COMP_CWORD -eq 2 && "$action" =~ ^(pull|status|down|up)$ ]]; then
                 sites="-a $sites"
             fi
@@ -99,17 +102,23 @@ _tis_web_completions() {
             local sel_env="${COMP_WORDS[2]}"
             if [ -d "$base_dir/$sel_env" ]; then
                 if [[ "$action" == "install" ]]; then
-                    local token_opt=""
                     if [ -f "/home/tis/.github_token" ]; then
-                        token_opt="-H \"Authorization: Bearer $(cat /home/tis/.github_token)\""
+                        github_repos=$(curl -s -H "Authorization: Bearer $(cat /home/tis/.github_token)" "https://api.github.com/orgs/TechITSimple/repos?per_page=100" | grep -o '"name": "[^"]*' | cut -d'"' -f4)
+                    else
+                        github_repos=$(curl -s "https://api.github.com/orgs/TechITSimple/repos?per_page=100" | grep -o '"name": "[^"]*' | cut -d'"' -f4)
                     fi
-                    github_repos=$(curl -s $token_opt https://api.github.com/orgs/TechITSimple/repos?per_page=100 | grep -o '"name": "[^"]*' | cut -d'"' -f4)
-                    sites=$(_filter_used "$github_repos")
+                    
+                    # Exclude what's already typed, tis-web, and already installed sites
+                    local existing_sites=$(cd "$base_dir/$sel_env" 2>/dev/null && compgen -d)
+                    local excludes="${COMP_WORDS[@]} tis-web $existing_sites"
+                    
+                    sites=$(_filter_list "$github_repos" "$excludes")
                     COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
                 else
                     sites=$(cd "$base_dir/$sel_env" 2>/dev/null && compgen -d)
-                    sites=$(_filter_used "$sites")
-                    # Offer -a for bulk commands if it's the first site parameter (Pos 3)
+                    local excludes="${COMP_WORDS[@]}"
+                    sites=$(_filter_list "$sites" "$excludes")
+                    
                     if [[ $COMP_CWORD -eq 3 && "$action" =~ ^(pull|status|down|up)$ ]]; then
                         sites="-a $sites"
                     fi
