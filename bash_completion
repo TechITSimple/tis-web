@@ -1,6 +1,4 @@
 #!/bin/bash
-# FILE: bash_completion
-# Autocompletion script for tis-web CLI (Advanced Filtering)
 
 _tis_web_completions() {
     local cur prev base_dir actions envs sites github_repos
@@ -16,10 +14,11 @@ _tis_web_completions() {
     # Helper function to remove items from suggestions based on an exclude list
     _filter_list() {
         local all_items="$1"
-        local exclude_items="$2"
+        local exclude_items=" $(echo $2) "
         local filtered=""
+        
         for item in $all_items; do
-            if [[ ! " ${exclude_items} " =~ " ${item} " ]]; then
+            if [[ ! "$exclude_items" == *" $item "* ]]; then
                 filtered="$filtered $item"
             fi
         done
@@ -61,13 +60,19 @@ _tis_web_completions() {
 
     # CASE B: We are inside an ENV folder (Pos 2 onwards are SITES)
     if [[ "$context" == "env" ]]; then
+        # LOCK: Block further suggestions if action is single-target and a site is already provided
+        if [[ "$action" =~ ^(install|edit|remove)$ ]] && [ $COMP_CWORD -gt 2 ]; then
+            COMPREPLY=()
+            return 0
+        fi
+
         if [[ "$action" == "install" ]]; then
             if [ -f "/home/tis/.github_token" ]; then
-                github_repos=$(curl -s -H "Authorization: Bearer $(cat /home/tis/.github_token)" "https://api.github.com/orgs/TechITSimple/repos?per_page=100" | grep -o '"name": "[^"]*' | cut -d'"' -f4)
+                github_repos=$(curl -s -H "Authorization: Bearer $(cat /home/tis/.github_token)" "https://api.github.com/orgs/TechITSimple/repos?per_page=100" | grep -o '"name": "[^"]*' | cut -d'"' -f4 | tr -d '\r')
             else
-                github_repos=$(curl -s "https://api.github.com/orgs/TechITSimple/repos?per_page=100" | grep -o '"name": "[^"]*' | cut -d'"' -f4)
+                github_repos=$(curl -s "https://api.github.com/orgs/TechITSimple/repos?per_page=100" | grep -o '"name": "[^"]*' | cut -d'"' -f4 | tr -d '\r')
             fi
-            # Exclude what's already typed, tis-web, and already installed sites
+            
             local existing_sites=$(cd "$current_dir" 2>/dev/null && compgen -d)
             local excludes="${COMP_WORDS[@]} tis-web $existing_sites"
             
@@ -99,16 +104,21 @@ _tis_web_completions() {
 
         # Pos 3 onwards are SITES
         if [ $COMP_CWORD -ge 3 ]; then
+            # LOCK: Block further suggestions if action is single-target and a site is already provided
+            if [[ "$action" =~ ^(install|edit|remove)$ ]] && [ $COMP_CWORD -gt 3 ]; then
+                COMPREPLY=()
+                return 0
+            fi
+
             local sel_env="${COMP_WORDS[2]}"
             if [ -d "$base_dir/$sel_env" ]; then
                 if [[ "$action" == "install" ]]; then
                     if [ -f "/home/tis/.github_token" ]; then
-                        github_repos=$(curl -s -H "Authorization: Bearer $(cat /home/tis/.github_token)" "https://api.github.com/orgs/TechITSimple/repos?per_page=100" | grep -o '"name": "[^"]*' | cut -d'"' -f4)
+                        github_repos=$(curl -s -H "Authorization: Bearer $(cat /home/tis/.github_token)" "https://api.github.com/orgs/TechITSimple/repos?per_page=100" | grep -o '"name": "[^"]*' | cut -d'"' -f4 | tr -d '\r')
                     else
-                        github_repos=$(curl -s "https://api.github.com/orgs/TechITSimple/repos?per_page=100" | grep -o '"name": "[^"]*' | cut -d'"' -f4)
+                        github_repos=$(curl -s "https://api.github.com/orgs/TechITSimple/repos?per_page=100" | grep -o '"name": "[^"]*' | cut -d'"' -f4 | tr -d '\r')
                     fi
                     
-                    # Exclude what's already typed, tis-web, and already installed sites
                     local existing_sites=$(cd "$base_dir/$sel_env" 2>/dev/null && compgen -d)
                     local excludes="${COMP_WORDS[@]} tis-web $existing_sites"
                     
