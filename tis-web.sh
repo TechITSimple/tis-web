@@ -28,13 +28,13 @@ show_help() {
     echo -e "Usage: ${GREEN}tis-web${RESET} <action> [environment] [sites... | -a]"
     echo ""
     echo -e "${BOLD}ACTIONS:${RESET}"
-    echo -e "  ${GREEN}create-env${RESET} <env>              Bootstrap a new environment"
-    echo -e "  ${GREEN}install${RESET} [env] <site>...       Clone and setup new site repositories"
-    echo -e "  ${GREEN}pull${RESET} [env] [sites...|-a]      Update site(s). Use -a or leave empty for all."
-    echo -e "  ${GREEN}status${RESET} [env] [sites...|-a]    Show container health. Use -a or leave empty for all."
-    echo -e "  ${GREEN}down/up${RESET} [env] [sites...|-a]   Manage container lifecycle. Use -a or leave empty for all."
-    echo -e "  ${GREEN}edit${RESET} [env] <site>...          Re-run interactive .env configuration"
-    echo -e "  ${GREEN}remove${RESET} [env] <site>...        PERMANENTLY delete site(s)"
+    echo -e "  ${GREEN}create-env${RESET} <env>             Bootstrap a new environment"
+    echo -e "  ${GREEN}install${RESET} [env] <site>         Clone and setup ONE new site"
+    echo -e "  ${GREEN}pull${RESET} [env] [sites...|-a]     Update site(s). Use -a or leave empty for all."
+    echo -e "  ${GREEN}status${RESET} [env] [sites...|-a]   Show container health. Use -a or leave empty for all."
+    echo -e "  ${GREEN}down/up${RESET} [env] [sites...|-a]  Manage container lifecycle. Use -a or leave empty for all."
+    echo -e "  ${GREEN}edit${RESET} [env] <site>            Re-run interactive .env configuration for ONE site"
+    echo -e "  ${GREEN}remove${RESET} [env] <site>          PERMANENTLY delete ONE site"
     echo ""
     echo -e "${BOLD}CONTEXT DETECTION:${RESET}"
     echo -e "  - ${CYAN}Root Folder:${RESET} If in $BASE_WEB_DIR, you MUST specify [env]"
@@ -102,9 +102,16 @@ else
         BULK_MODE=true
     fi
 
-    if [[ "$ACTION" =~ ^(install|edit|remove)$ ]] && [ "$BULK_MODE" == true ]; then
-        echo -e "${RED}Error: Action '$ACTION' requires specific target site(s).${RESET}"
-        exit 1
+    # Lock single-target actions
+    if [[ "$ACTION" =~ ^(install|edit|remove)$ ]]; then
+        if [ "$BULK_MODE" == true ]; then
+            echo -e "${RED}Error: Action '$ACTION' requires a specific target site.${RESET}"
+            exit 1
+        fi
+        if [ ${#TARGET_SITES[@]} -gt 1 ]; then
+            echo -e "${RED}Error: Action '$ACTION' accepts only ONE target site at a time.${RESET}"
+            exit 1
+        fi
     fi
 
     # Validate existence of each requested site (skip for install)
@@ -342,15 +349,14 @@ do_action() {
 case "$ACTION" in
     create-env) do_create_env ;;
     install|edit|remove)
-        for site in "${TARGET_SITES[@]}"; do
-            TARGET_SITE=$site
-            TARGET_DIR="$ENV_DIR/$TARGET_SITE"
-            if [ "$ACTION" == "install" ]; then
-                do_install
-            else
-                do_action "$ACTION"
-            fi
-        done
+        # We know from validation that TARGET_SITES has exactly 1 element here
+        TARGET_SITE=${TARGET_SITES[0]}
+        TARGET_DIR="$ENV_DIR/$TARGET_SITE"
+        if [ "$ACTION" == "install" ]; then
+            do_install
+        else
+            do_action "$ACTION"
+        fi
         ;;
     status|pull|down|up)
         if [ "$BULK_MODE" == true ]; then
