@@ -1,8 +1,9 @@
 #!/bin/bash
 # FILE: bash_completion
+# Autocompletion script for tis-web CLI (Multiselect & GitHub Integration)
 
 _tis_web_completions() {
-    local cur prev base_dir actions envs sites
+    local cur prev base_dir actions envs sites github_repos
     local current_dir="$PWD"
     local action="${COMP_WORDS[1]}"
 
@@ -12,14 +13,26 @@ _tis_web_completions() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    # --- 1. Actions ---
+    # Helper function to remove already typed items from suggestions
+    _filter_used() {
+        local all_items="$1"
+        local used_items="${COMP_WORDS[@]}"
+        local filtered=""
+        for item in $all_items; do
+            if [[ ! " ${used_items[@]} " =~ " ${item} " ]]; then
+                filtered="$filtered $item"
+            fi
+        done
+        echo "$filtered"
+    }
+
+    # --- 1. Actions (Level 1) ---
     if [ $COMP_CWORD -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$actions" -- "$cur") )
         return 0
     fi
 
     # --- 2. Action Filtering ---
-    # create-env and help never take suggestions after the action
     if [[ "$action" == "create-env" || "$action" == "help" ]]; then
         COMPREPLY=()
         return 0
@@ -38,53 +51,73 @@ _tis_web_completions() {
         detected_env=$(basename "$current_dir")
     fi
 
-    # --- 4. Suggestions based on COMP_CWORD ---
-    case $COMP_CWORD in
-        2)
-            if [[ "$context" == "site" ]]; then
-                # Already inside a site folder, no parameters needed
-                COMPREPLY=()
-                
-            elif [[ "$context" == "env" ]]; then
-                # Inside an env folder: parameter 2 is the SITE
+    # --- 4. Suggestions based on Position & Context ---
+    
+    # CASE A: We are inside a SITE folder
+    if [[ "$context" == "site" ]]; then
+        COMPREPLY=()
+        return 0
+    fi
+
+    # CASE B: We are inside an ENV folder (Pos 2 onwards are SITES)
+    if [[ "$context" == "env" ]]; then
+        if [[ "$action" == "install" ]]; then
+            # Fetch from GitHub
+            local token_opt=""
+            if [ -f "/home/tis/.github_token" ]; then
+                token_opt="-H \"Authorization: Bearer $(cat /home/tis/.github_token)\""
+            fi
+            # Use grep/awk to parse basic JSON quickly without jq dependency
+            github_repos=$(curl -s $token_opt https://api.github.com/orgs/TechITSimple/repos?per_page=100 | grep -o '"name": "[^"]*' | cut -d'"' -f4)
+            sites=$(_filter_used "$github_repos")
+            COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
+        else
+            sites=$(cd "$current_dir" 2>/dev/null && compgen -d)
+            sites=$(_filter_used "$sites")
+            # Offer -a for bulk commands if it's the first site parameter
+            if [[ $COMP_CWORD -eq 2 && "$action" =~ ^(pull|status|down|up)$ ]]; then
+                sites="-a $sites"
+            fi
+            COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
+        fi
+        return 0
+    fi
+
+    # CASE C: We are at ROOT / Anywhere Else
+    if [[ "$context" == "root" || "$context" == "anywhere" ]]; then
+        # Pos 2 is ALWAYS the Environment
+        if [ $COMP_CWORD -eq 2 ]; then
+            if [ -d "$base_dir" ]; then
+                envs=$(cd "$base_dir" 2>/dev/null && compgen -d)
+                COMPREPLY=( $(compgen -W "$envs" -- "$cur") )
+            fi
+            return 0
+        fi
+
+        # Pos 3 onwards are SITES
+        if [ $COMP_CWORD -ge 3 ]; then
+            local sel_env="${COMP_WORDS[2]}"
+            if [ -d "$base_dir/$sel_env" ]; then
                 if [[ "$action" == "install" ]]; then
-                    COMPREPLY=() # Waiting for user to type a new site name
+                    local token_opt=""
+                    if [ -f "/home/tis/.github_token" ]; then
+                        token_opt="-H \"Authorization: Bearer $(cat /home/tis/.github_token)\""
+                    fi
+                    github_repos=$(curl -s $token_opt https://api.github.com/orgs/TechITSimple/repos?per_page=100 | grep -o '"name": "[^"]*' | cut -d'"' -f4)
+                    sites=$(_filter_used "$github_repos")
+                    COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
                 else
-                    sites=$(cd "$current_dir" 2>/dev/null && compgen -d)
+                    sites=$(cd "$base_dir/$sel_env" 2>/dev/null && compgen -d)
+                    sites=$(_filter_used "$sites")
+                    # Offer -a for bulk commands if it's the first site parameter (Pos 3)
+                    if [[ $COMP_CWORD -eq 3 && "$action" =~ ^(pull|status|down|up)$ ]]; then
+                        sites="-a $sites"
+                    fi
                     COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
                 fi
-                
-            elif [[ "$context" == "root" || "$context" == "anywhere" ]]; then
-                # Outside: parameter 2 is the ENV
-                if [ -d "$base_dir" ]; then
-                    envs=$(cd "$base_dir" 2>/dev/null && compgen -d)
-                    COMPREPLY=( $(compgen -W "$envs" -- "$cur") )
-                fi
             fi
-            ;;
-            
-        3)
-            # Parameter 3 is only reached if Context was Root/Anywhere (meaning param 2 was ENV)
-            if [[ "$context" == "root" || "$context" == "anywhere" ]]; then
-                if [[ "$action" == "install" ]]; then
-                    COMPREPLY=() # Waiting for user to type a new site name
-                else
-                    local sel_env="${COMP_WORDS[2]}"
-                    if [ -d "$base_dir/$sel_env" ]; then
-                        sites=$(cd "$base_dir/$sel_env" 2>/dev/null && compgen -d)
-                        COMPREPLY=( $(compgen -W "$sites" -- "$cur") )
-                    fi
-                fi
-            else
-                COMPREPLY=()
-            fi
-            ;;
-            
-        *)
-            # Stop suggesting after the 3rd parameter
-            COMPREPLY=()
-            ;;
-    esac
+        fi
+    fi
 }
 
 complete -F _tis_web_completions tis-web
