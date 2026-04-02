@@ -295,7 +295,7 @@ do_install() {
     # HOOK: pre-install (One-time setup)
     if [ -f "$TARGET_DIR/pre-install.sh" ]; then
         echo -e "${CYAN}[Manager] 🪝  Executing pre-install hook...${RESET}"
-        chmod +x "$TARGET_DIR/pre-install.sh"
+        sudo chmod +x "$TARGET_DIR/pre-install.sh"
         (cd "$TARGET_DIR" && bash "pre-install.sh")
     fi
 
@@ -305,7 +305,7 @@ do_install() {
     # HOOK: post-install (One-time setup)
     if [ -f "$TARGET_DIR/post-install.sh" ]; then
         echo -e "${CYAN}[Manager] 🪝  Executing post-install hook...${RESET}"
-        chmod +x "$TARGET_DIR/post-install.sh"
+        sudo chmod +x "$TARGET_DIR/post-install.sh"
         (cd "$TARGET_DIR" && bash "post-install.sh")
     fi
 
