@@ -292,6 +292,14 @@ do_install() {
     echo -e "${CYAN}[Manager] 🛡️  Disabling Git fileMode tracking...${RESET}"
     (cd "$TARGET_DIR" && sudo -u tis git config core.fileMode false)
 
+    # HOOK: pre-install (One-time setup)
+    if [ -f "$TARGET_DIR/pre-install.sh" ]; then
+        echo -e "${CYAN}[Manager] 🪝  Executing pre-install hook...${RESET}"
+        chmod +x "$TARGET_DIR/pre-install.sh"
+        (cd "$TARGET_DIR" && bash "pre-install.sh")
+    fi
+
+    # BUILD
     build_env_interactively "$TARGET_DIR"
 
     # HOOK: post-install (One-time setup)
