@@ -25,16 +25,16 @@ REPOSITORY_OWNER="TechITSimple"
 # --- 2. HELP FUNCTION ---
 show_help() {
     echo -e "${BOLD}${CYAN}TechITSimple Web Manager${RESET}"
-    echo -e "Usage: ${GREEN}tis-web${RESET} <action> [environment] [site]"
+    echo -e "Usage: ${GREEN}tis-web${RESET} <action> [environment] [sites... | -a]"
     echo ""
     echo -e "${BOLD}ACTIONS:${RESET}"
-    echo -e "  ${GREEN}create-env${RESET} <env>          Bootstrap a new environment"
-    echo -e "  ${GREEN}install${RESET} [env] <site>      Clone and setup a new site repository"
-    echo -e "  ${GREEN}pull${RESET} [env] [site]         Update site(s). Leave [site] empty to update all."
-    echo -e "  ${GREEN}status${RESET} [env] [site]       Show container health. Leave [site] empty for all."
-    echo -e "  ${GREEN}down/up${RESET} [env] [site]      Manage container lifecycle. Leave empty for all."
-    echo -e "  ${GREEN}edit${RESET} [env] <site>         Re-run interactive .env configuration"
-    echo -e "  ${GREEN}remove${RESET} [env] <site>       PERMANENTLY delete a site"
+    echo -e "  ${GREEN}create-env${RESET} <env>              Bootstrap a new environment"
+    echo -e "  ${GREEN}install${RESET} [env] <site>...       Clone and setup new site repositories"
+    echo -e "  ${GREEN}pull${RESET} [env] [sites...|-a]      Update site(s). Use -a or leave empty for all."
+    echo -e "  ${GREEN}status${RESET} [env] [sites...|-a]    Show container health. Use -a or leave empty for all."
+    echo -e "  ${GREEN}down/up${RESET} [env] [sites...|-a]   Manage container lifecycle. Use -a or leave empty for all."
+    echo -e "  ${GREEN}edit${RESET} [env] <site>...          Re-run interactive .env configuration"
+    echo -e "  ${GREEN}remove${RESET} [env] <site>...        PERMANENTLY delete site(s)"
     echo ""
     echo -e "${BOLD}CONTEXT DETECTION:${RESET}"
     echo -e "  - ${CYAN}Root Folder:${RESET} If in $BASE_WEB_DIR, you MUST specify [env]"
@@ -46,7 +46,7 @@ show_help() {
 # --- 3. ARGUMENT PARSING & CONTEXT RESOLUTION ---
 ACTION=$1
 ENV_NAME=""
-TARGET_SITE=""
+TARGET_SITES=()
 
 # Show help if no arguments or help requested
 if [[ -z "$ACTION" || "$ACTION" == "-h" || "$ACTION" == "--help" || "$ACTION" == "help" ]]; then
@@ -64,27 +64,31 @@ if [ "$ACTION" == "create-env" ]; then
     ENV_NAME=$2
     ENV_DIR="$BASE_WEB_DIR/$ENV_NAME"
 else
-    # Detect context dynamically
-    # 1. Root Folder
+    # Detect context dynamically using shift to capture remaining args
     if [ "$PWD" == "$BASE_WEB_DIR" ]; then
         ENV_NAME=$2
-        TARGET_SITE=$3
-    # 2. Env Folder
+        shift 2 || true
+        TARGET_SITES=("$@")
     elif [ -d "$PWD/$CORE_NAME" ]; then
         ENV_NAME=$(basename "$PWD")
-        TARGET_SITE=$2
-    # 3. Site Folder
+        shift 1 || true
+        TARGET_SITES=("$@")
     elif [ -d "$(dirname "$PWD")/$CORE_NAME" ]; then
         ENV_NAME=$(basename "$(dirname "$PWD")")
-        TARGET_SITE=$(basename "$PWD")
-    # 4. Anywhere Else
+        shift 1 || true
+        # If inside a site folder but we pass args (like -a), respect them
+        if [ ${#@} -gt 0 ]; then
+            TARGET_SITES=("$@")
+        else
+            TARGET_SITES=($(basename "$PWD"))
+        fi
     else
         ENV_NAME=$2
-        TARGET_SITE=$3
+        shift 2 || true
+        TARGET_SITES=("$@")
     fi
 
     ENV_DIR="$BASE_WEB_DIR/$ENV_NAME"
-    TARGET_DIR="$ENV_DIR/$TARGET_SITE"
 
     # --- 4. VALIDATION ---
     if [ -z "$ENV_NAME" ] || [ ! -d "$ENV_DIR" ]; then
@@ -92,14 +96,25 @@ else
         exit 1
     fi
 
-    if [[ "$ACTION" =~ ^(install|edit|remove)$ ]] && [ -z "$TARGET_SITE" ]; then
-        echo -e "${RED}Error: Action '$ACTION' requires a specific target site.${RESET}"
+    BULK_MODE=false
+    # Trigger bulk mode if empty, or if first arg is -a or *
+    if [[ ${#TARGET_SITES[@]} -eq 0 || "${TARGET_SITES[0]}" == "-a" || "${TARGET_SITES[0]}" == "*" ]]; then
+        BULK_MODE=true
+    fi
+
+    if [[ "$ACTION" =~ ^(install|edit|remove)$ ]] && [ "$BULK_MODE" == true ]; then
+        echo -e "${RED}Error: Action '$ACTION' requires specific target site(s).${RESET}"
         exit 1
     fi
 
-    if [[ "$ACTION" != "install" && -n "$TARGET_SITE" && "$TARGET_SITE" != "*" && ! -d "$TARGET_DIR" ]]; then
-        echo -e "${RED}Error: Site '$TARGET_SITE' does not exist in environment '$ENV_NAME'.${RESET}"
-        exit 1
+    # Validate existence of each requested site (skip for install)
+    if [ "$BULK_MODE" == false ] && [ "$ACTION" != "install" ]; then
+        for site in "${TARGET_SITES[@]}"; do
+            if [ ! -d "$ENV_DIR/$site" ]; then
+                echo -e "${RED}Error: Site '$site' does not exist in environment '$ENV_NAME'.${RESET}"
+                exit 1
+            fi
+        done
     fi
 fi
 
@@ -175,14 +190,21 @@ build_env_interactively() {
 
 do_bulk_action() {
     local act=$1
-    local d_cmd=$act
-    # Convert 'status' to docker compose 'ps' and 'up' to 'up -d'
-    [ "$act" == "status" ] && d_cmd="ps"
-    [ "$act" == "up" ] && d_cmd="up -d"
-
+    
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
     echo -e "${BOLD}${YELLOW}BULK ACTION: ${act^^} ON ALL IN $ENV_NAME${RESET}"
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
+
+    # --- STATUS OPTIMIZATION ---
+    if [ "$act" == "status" ]; then
+        # Use native Docker filter instead of looping directories
+        docker ps -a --filter "name=${ENV_NAME}"
+        echo -e "${BOLD}${CYAN}=========================================${RESET}"
+        return 0
+    fi
+
+    local d_cmd=$act
+    [ "$act" == "up" ] && d_cmd="up -d"
 
     # 1. Always process Core first
     if [ -d "$ENV_DIR/$CORE_NAME" ]; then
@@ -257,14 +279,27 @@ do_install() {
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
     
     cd "$ENV_DIR"
+    
     sudo -u tis git clone "git@${GIT_HOST}:${REPOSITORY_OWNER}/${TARGET_SITE}.git" "$TARGET_SITE"
     
+    echo -e "${CYAN}[Manager] 🛡️  Disabling Git fileMode tracking...${RESET}"
+    (cd "$TARGET_DIR" && sudo -u tis git config core.fileMode false)
+
+    build_env_interactively "$TARGET_DIR"
+
+    # HOOK: post-install (One-time setup)
+    if [ -f "$TARGET_DIR/post-install.sh" ]; then
+        echo -e "${CYAN}[Manager] 🪝  Executing post-install hook...${RESET}"
+        chmod +x "$TARGET_DIR/post-install.sh"
+        (cd "$TARGET_DIR" && bash "post-install.sh")
+    fi
+
+    # Initial permission fix before first run
     sudo chown -R tis:web-admins "$TARGET_SITE"
     sudo chmod -R 775 "$TARGET_SITE"
 
-    build_env_interactively "$TARGET_DIR"
-    
-    (cd "$TARGET_DIR" && bash "$UPDATE_SCRIPT" --force)
+    # First launch
+    do_action "pull"
 }
 
 do_action() {
@@ -306,15 +341,28 @@ do_action() {
 # --- 6. ROUTER ---
 case "$ACTION" in
     create-env) do_create_env ;;
-    install)    do_install ;; 
+    install|edit|remove)
+        for site in "${TARGET_SITES[@]}"; do
+            TARGET_SITE=$site
+            TARGET_DIR="$ENV_DIR/$TARGET_SITE"
+            if [ "$ACTION" == "install" ]; then
+                do_install
+            else
+                do_action "$ACTION"
+            fi
+        done
+        ;;
     status|pull|down|up)
-        if [[ -z "$TARGET_SITE" || "$TARGET_SITE" == "*" ]]; then
+        if [ "$BULK_MODE" == true ]; then
             do_bulk_action "$ACTION"
         else
-            do_action "$ACTION"
+            for site in "${TARGET_SITES[@]}"; do
+                TARGET_SITE=$site
+                TARGET_DIR="$ENV_DIR/$TARGET_SITE"
+                do_action "$ACTION"
+            done
         fi
         ;;
-    edit|remove) do_action "$ACTION" ;;
     *) 
         echo -e "${RED}Unknown command: $ACTION${RESET}"
         show_help
