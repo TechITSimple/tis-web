@@ -1,4 +1,7 @@
 #!/bin/bash
+# FILE: tis-web-update.sh
+# Handles Git conflict resolution and Docker rebuilds.
+# Note: Hooks (pre-up/post-up) and permissions are handled by the main CLI.
 
 set -e
 
@@ -11,13 +14,11 @@ SITE_NAME=$(basename "$PWD")
 # Extract macro-environment name from the parent directory
 ENV_NAME=$(basename "$(dirname "$PWD")")
 
-# 1. EXPORT ISOLATION VARIABLES
-# These tell Docker Compose which network to use and how to prefix containers
+# 1. EXPORT ISOLATION VARIABLES (Fallback for docker-compose overrides)
 export COMPOSE_PROJECT_NAME="${ENV_NAME}-${SITE_NAME}"
 export NETWORK_NAME="${ENV_NAME}-net"
 
 # 2. COLD START CHECK
-# If no containers exist for this specific project, force the build
 if [ -z "$(docker compose ps -q 2>/dev/null)" ]; then
     echo "[$SITE_NAME] 🚀 Cold start detected. Forcing initial build..."
     FORCE_UPDATE=1
@@ -25,15 +26,7 @@ fi
 
 echo "[$SITE_NAME] 🔄 Checking for updates..."
 
-# 3. PRE-UPDATE HOOK
-if [ -f "pre-update.sh" ]; then
-    echo "[$SITE_NAME] 🔗 Preparing and executing pre-update hook..."
-    sudo chmod +x pre-update.sh
-    source pre-update.sh
-fi
-
-# 3.5. GIT CONFIGURATION (Anti-Permission Errors)
-# Configure Git to ignore chmod edits
+# 3. GIT CONFIGURATION (Anti-Permission Errors)
 sudo -u tis git config core.filemode false
 
 # 4. GIT PULL & CONFLICT MANAGEMENT
@@ -47,7 +40,7 @@ if ! sudo -u tis git merge-base --is-ancestor HEAD origin/main; then
     echo "[$SITE_NAME] ⚠️ CONFLICT DETECTED: Local changes would be overwritten."
     
     # Interactive prompt
-    read -p "[$SITE_NAME] Do you want to FORCE the GitHub version (discards local changes)? [y/N]: " CONFIRM
+    read -p "[$SITE_NAME] Do you want to FORCE the GitHub version (discards local changes)? [y/N]: " CONFIRM < /dev/tty
     
     if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
         echo "[$SITE_NAME] 💥 Forcing remote version (git reset --hard)..."
@@ -57,22 +50,11 @@ if ! sudo -u tis git merge-base --is-ancestor HEAD origin/main; then
         exit 1
     fi
 else
-    # If no conflicts, normally pull
     sudo -u tis git pull > /dev/null
 fi
 
-REMOTE_COMMIT=$(git rev-parse HEAD)
-
 # 5. DOCKER DEPLOYMENT
 echo "[$SITE_NAME] 🏗️ Processing containers (Network: $NETWORK_NAME)..."
-docker compose up -d --build --force-recreate> /dev/null
+docker compose up -d --build --force-recreate > /dev/null
 
-# 6. POST-UPDATE HOOK
-if [ -f "post-update.sh" ]; then
-    echo "[$SITE_NAME] 🔗 Preparing and executing post-update hook..."
-    sudo chmod +x post-update.sh
-    source post-update.sh
-fi
-
-echo "[$SITE_NAME] ✅ Update complete."
-echo ""
+echo "[$SITE_NAME] ✅ Pull & Rebuild complete."
