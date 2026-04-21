@@ -292,26 +292,21 @@ do_install() {
     echo -e "${CYAN}[Manager] 🛡️  Disabling Git fileMode tracking...${RESET}"
     (cd "$TARGET_DIR" && sudo -u tis git config core.fileMode false)
 
-    # HOOK: pre-install (One-time setup)
-    if [ -f "$TARGET_DIR/pre-install.sh" ]; then
-        echo -e "${CYAN}[Manager] 🪝  Executing pre-install hook...${RESET}"
-        sudo chmod +x "$TARGET_DIR/pre-install.sh"
-        (cd "$TARGET_DIR" && bash "pre-install.sh")
-    fi
-
-    # BUILD
+    # BUILD .ENV
     build_env_interactively "$TARGET_DIR"
 
-    # HOOK: post-install (One-time setup)
+    # HOOK: post-install (One-time setup: e.g. move DB from staging)
     if [ -f "$TARGET_DIR/post-install.sh" ]; then
         echo -e "${CYAN}[Manager] 🪝  Executing post-install hook...${RESET}"
         sudo chmod +x "$TARGET_DIR/post-install.sh"
         (cd "$TARGET_DIR" && bash "post-install.sh")
     fi
 
-    # Initial permission fix before first run
-    sudo chown -R tis:web-admins "$TARGET_SITE"
-    sudo chmod -R 775 "$TARGET_SITE"
+    # Initial permission fix (using absolute path TARGET_DIR and g+s for inheritance)
+    echo -e "${CYAN}[Manager] 🔐 Finalizing initial permissions...${RESET}"
+    sudo chown -R tis:web-admins "$TARGET_DIR"
+    sudo chmod -R 775 "$TARGET_DIR"
+    sudo find "$TARGET_DIR" -type d -exec chmod g+s {} +
 
     # First launch
     do_action "pull"
@@ -328,17 +323,45 @@ do_action() {
     echo -e "${BOLD}${CYAN}=========================================${RESET}"
     
     case "$action" in
-        down|up|status)
-            (cd "$TARGET_DIR" && docker compose $d_cmd)
-            [ "$action" != "status" ] && echo -e "${GREEN}Containers ${action} applied.${RESET}"
+        down|up|status|pull)
+            # 1. HOOK: pre-up (Only for start/update actions)
+            if [[ "$action" =~ ^(up|pull)$ ]] && [ -f "$TARGET_DIR/pre-up.sh" ]; then
+                echo -e "${CYAN}[Manager] 🪝  Executing pre-up hook...${RESET}"
+                sudo chmod +x "$TARGET_DIR/pre-up.sh"
+                (cd "$TARGET_DIR" && bash "pre-up.sh")
+            fi
+
+            # 2. DOCKER ACTION
+            if [ "$action" == "pull" ]; then
+                (cd "$TARGET_DIR" && bash "$UPDATE_SCRIPT")
+            else
+                (cd "$TARGET_DIR" && docker compose $d_cmd)
+            fi
+
+            # 3. MASSIVE PERMISSION FIX (The "Safety Net")
+            # We run this AFTER Docker touches volumes to reclaim root-created folders
+            if [[ "$action" =~ ^(up|pull)$ ]]; then
+                echo -e "${CYAN}[Manager] 🔐  Reclaiming permissions from Docker...${RESET}"
+                sudo chown -R tis:web-admins "$TARGET_DIR"
+                sudo chmod -R 775 "$TARGET_DIR"
+                sudo find "$TARGET_DIR" -type d -exec chmod g+s {} +
+            fi
+
+            # 4. HOOK: post-up (Post-launch operations: e.g. Security Hardening)
+            if [[ "$action" =~ ^(up|pull)$ ]] && [ -f "$TARGET_DIR/post-up.sh" ]; then
+                echo -e "${CYAN}[Manager] 🪝  Executing post-up hook...${RESET}"
+                sudo chmod +x "$TARGET_DIR/post-up.sh"
+                (cd "$TARGET_DIR" && bash "post-up.sh")
+            fi
+
+            [ "$action" != "status" ] && echo -e "${GREEN}Action '${action}' completed.${RESET}"
             ;;
-        pull)
-            (cd "$TARGET_DIR" && bash "$UPDATE_SCRIPT")
-            ;;
+        
         edit)
             build_env_interactively "$TARGET_DIR"
             (cd "$TARGET_DIR" && bash "$UPDATE_SCRIPT" --force)
             ;;
+            
         remove)
             echo -e "${RED}WARNING: You are about to PERMANENTLY remove '$TARGET_SITE'.${RESET}"
             read -p "Are you absolutely sure? [y/N]: " confirm < /dev/tty
@@ -346,8 +369,6 @@ do_action() {
                 (cd "$TARGET_DIR" && docker compose down -v)
                 sudo rm -rf "$TARGET_DIR"
                 echo -e "${GREEN}'$TARGET_SITE' removed successfully.${RESET}"
-            else
-                echo -e "${YELLOW}Aborted.${RESET}"
             fi
             ;;
     esac
