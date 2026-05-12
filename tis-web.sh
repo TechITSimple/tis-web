@@ -34,6 +34,7 @@ show_help() {
     echo -e "  ${GREEN}status${RESET} [env] [sites...|-a]   Show container health. Use -a or leave empty for all."
     echo -e "  ${GREEN}down/up${RESET} [env] [sites...|-a]  Manage container lifecycle. Use -a or leave empty for all."
     echo -e "  ${GREEN}edit${RESET} [env] <site>            Re-run interactive .env configuration for ONE site"
+    echo -e "  ${GREEN}migrate${RESET} [env] <site> <dest>  Migrate and duplicate a site to a different environment"
     echo -e "  ${GREEN}remove${RESET} [env] <site>          PERMANENTLY delete ONE site"
     echo ""
     echo -e "${BOLD}CONTEXT DETECTION:${RESET}"
@@ -100,6 +101,17 @@ else
     # Trigger bulk mode if empty, or if first arg is -a or *
     if [[ ${#TARGET_SITES[@]} -eq 0 || "${TARGET_SITES[0]}" == "-a" || "${TARGET_SITES[0]}" == "*" ]]; then
         BULK_MODE=true
+    fi
+
+    # Handle custom validation for 'migrate'
+    if [[ "$ACTION" == "migrate" ]]; then
+        if [ ${#TARGET_SITES[@]} -ne 2 ]; then
+            echo -e "${RED}Error: Action 'migrate' requires a target site and a destination environment.${RESET}"
+            echo -e "Example: tis-web migrate current_env website new_env"
+            exit 1
+        fi
+        DEST_ENV="${TARGET_SITES[1]}"
+        TARGET_SITES=("${TARGET_SITES[0]}") # Isolate the site name for standard validation
     fi
 
     # Lock single-target actions
@@ -312,6 +324,78 @@ do_install() {
     do_action "pull"
 }
 
+do_migrate() {
+    local source_dir="$ENV_DIR/$TARGET_SITE"
+    local dest_env_dir="$BASE_WEB_DIR/$DEST_ENV"
+    local dest_dir="$dest_env_dir/$TARGET_SITE"
+
+    echo -e "${BOLD}${CYAN}=========================================${RESET}"
+    echo -e "${BOLD}${YELLOW}MIGRATING: $TARGET_SITE from $ENV_NAME to $DEST_ENV${RESET}"
+    echo -e "${BOLD}${CYAN}=========================================${RESET}"
+
+    if [ ! -d "$dest_env_dir" ]; then
+        echo -e "${RED}Error: Destination environment '$DEST_ENV' does not exist.${RESET}"
+        exit 1
+    fi
+
+    # --- SOVRASCRITTURA (Overwrite Check) ---
+    if [ -d "$dest_dir" ]; then
+        echo -e "${YELLOW}WARNING: Site '$TARGET_SITE' already exists in destination environment '$DEST_ENV'.${RESET}"
+        read -p "Do you want to OVERWRITE it? This will DESTROY the existing destination site and its volumes. [y/N]: " confirm < /dev/tty
+        if [[ "$confirm" =~ ^[Yy]$ ]]; then
+            echo -e "${CYAN}[Migration] 🗑️  Removing existing destination site...${RESET}"
+            (cd "$dest_dir" && docker compose down -v 2>/dev/null || true)
+            sudo rm -rf "$dest_dir"
+        else
+            echo -e "${RED}Migration aborted by user.${RESET}"
+            exit 1
+        fi
+    fi
+
+    # 1. HOOK: pre-migrate (Source)
+    if [ -f "$source_dir/pre-migrate.sh" ]; then
+        echo -e "${CYAN}[Migration] 🪝  Executing pre-migrate hook on source...${RESET}"
+        sudo chmod +x "$source_dir/pre-migrate.sh"
+        (cd "$source_dir" && bash "pre-migrate.sh")
+    fi
+
+    # 2. Copia dei file
+    echo -e "${CYAN}[Migration] 📦 Cloning site files to $DEST_ENV...${RESET}"
+    cp -a "$source_dir" "$dest_dir"
+
+    # 3. Cambio di contesto verso la destinazione
+    ENV_NAME="$DEST_ENV"
+    ENV_DIR="$dest_env_dir"
+    TARGET_DIR="$dest_dir"
+
+    echo -e "${CYAN}[Migration] ⚙️  Reconfiguring destination environment variables...${RESET}"
+    
+    # Pulizia vecchie variabili di sistema
+    sed -i '/^NETWORK_NAME=/d' "$TARGET_DIR/.env" 2>/dev/null || true
+    sed -i '/^COMPOSE_PROJECT_NAME=/d' "$TARGET_DIR/.env" 2>/dev/null || true
+    sed -i '/^ENV_NAME=/d' "$TARGET_DIR/.env" 2>/dev/null || true
+
+    # Generazione nuovo .env
+    build_env_interactively "$TARGET_DIR"
+
+    # Applicazione permessi standard sulla nuova copia
+    sudo chown -R tis:web-admins "$TARGET_DIR"
+    sudo chmod -R 775 "$TARGET_DIR"
+    sudo find "$TARGET_DIR" -type d -exec chmod g+s {} +
+
+    # 4. HOOK: post-migrate (Destination)
+    if [ -f "$TARGET_DIR/post-migrate.sh" ]; then
+        echo -e "${CYAN}[Migration] 🪝  Executing post-migrate hook on destination...${RESET}"
+        sudo chmod +x "$TARGET_DIR/post-migrate.sh"
+        (cd "$TARGET_DIR" && bash "post-migrate.sh")
+    fi
+
+    echo -e "${CYAN}[Migration] 🚀 Booting up the standalone copy in $DEST_ENV...${RESET}"
+    do_action "up"
+
+    echo -e "${GREEN}[Migration] 🎉 Migration completed successfully!${RESET}"
+}
+
 do_action() {
     local action=$1
     local d_cmd=$action
@@ -386,6 +470,11 @@ case "$ACTION" in
         else
             do_action "$ACTION"
         fi
+        ;;
+    migrate)
+        TARGET_SITE=${TARGET_SITES[0]}
+        TARGET_DIR="$ENV_DIR/$TARGET_SITE"
+        do_migrate
         ;;
     status|pull|down|up)
         if [ "$BULK_MODE" == true ]; then
