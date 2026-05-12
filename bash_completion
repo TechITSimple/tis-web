@@ -6,7 +6,7 @@ _tis_web_completions() {
     local action="${COMP_WORDS[1]}"
 
     base_dir="/home/tis/websites"
-    actions="create-env install pull status down up edit remove help"
+    actions="create-env install pull status down up edit migrate remove help"
     
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -60,9 +60,21 @@ _tis_web_completions() {
 
     # CASE B: We are inside an ENV folder (Pos 2 onwards are SITES)
     if [[ "$context" == "env" ]]; then
-        # LOCK: Block further suggestions if action is single-target and a site is already provided
+        # LOCK: Block further suggestions for single-target actions
         if [[ "$action" =~ ^(install|edit|remove)$ ]] && [ $COMP_CWORD -gt 2 ]; then
             COMPREPLY=()
+            return 0
+        elif [[ "$action" == "migrate" ]] && [ $COMP_CWORD -gt 3 ]; then
+            COMPREPLY=()
+            return 0
+        fi
+
+        # SUGGESTION FOR MIGRATE DESTINATION: If action is migrate and we are at arg 3, suggest environments
+        if [[ "$action" == "migrate" && $COMP_CWORD -eq 3 ]]; then
+            local all_envs=$(cd "$base_dir" 2>/dev/null && compgen -d)
+            local excludes="$detected_env"
+            local valid_envs=$(_filter_list "$all_envs" "$excludes")
+            COMPREPLY=( $(compgen -W "$valid_envs" -- "$cur") )
             return 0
         fi
 
@@ -104,9 +116,21 @@ _tis_web_completions() {
 
         # Pos 3 onwards are SITES
         if [ $COMP_CWORD -ge 3 ]; then
-            # LOCK: Block further suggestions if action is single-target and a site is already provided
+            # LOCK: Block further suggestions for single-target actions
             if [[ "$action" =~ ^(install|edit|remove)$ ]] && [ $COMP_CWORD -gt 3 ]; then
                 COMPREPLY=()
+                return 0
+            elif [[ "$action" == "migrate" ]] && [ $COMP_CWORD -gt 4 ]; then
+                COMPREPLY=()
+                return 0
+            fi
+
+            # SUGGESTION FOR MIGRATE DESTINATION: If action is migrate and we are at arg 4, suggest environments
+            if [[ "$action" == "migrate" && $COMP_CWORD -eq 4 ]]; then
+                local all_envs=$(cd "$base_dir" 2>/dev/null && compgen -d)
+                local excludes="${COMP_WORDS[2]}"
+                local valid_envs=$(_filter_list "$all_envs" "$excludes")
+                COMPREPLY=( $(compgen -W "$valid_envs" -- "$cur") )
                 return 0
             fi
 
