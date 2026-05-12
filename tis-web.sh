@@ -383,15 +383,15 @@ do_migrate() {
     sudo chmod -R 775 "$TARGET_DIR"
     sudo find "$TARGET_DIR" -type d -exec chmod g+s {} +
 
+    echo -e "${CYAN}[Migration] 🚀 Booting up the standalone copy in $DEST_ENV...${RESET}"
+    do_action "up"
+
     # 4. HOOK: post-migrate (Destination)
     if [ -f "$TARGET_DIR/post-migrate.sh" ]; then
         echo -e "${CYAN}[Migration] 🪝  Executing post-migrate hook on destination...${RESET}"
         sudo chmod +x "$TARGET_DIR/post-migrate.sh"
         (cd "$TARGET_DIR" && bash "post-migrate.sh")
     fi
-
-    echo -e "${CYAN}[Migration] 🚀 Booting up the standalone copy in $DEST_ENV...${RESET}"
-    do_action "up"
 
     echo -e "${GREEN}[Migration] 🎉 Migration completed successfully!${RESET}"
 }
